@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>Frozen Tree V12 (Cyan & Gold Butterflies - Soft Glow)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: 
+                radial-gradient(circle at center, rgba(20, 50, 80, 0.3) 0%, rgba(0,0,0,0) 60%),
+                linear-gradient(to bottom, #020c1b, #0a192f);
+            color: white;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let particles = [];
+        let snowParticles = [];
+        let spiralParticles = [];
+        let butterflies = [];
+        
+        const TREE_PARTICLE_COUNT = 1500; 
+        const SNOW_COUNT = 200; 
+        const SPIRAL_COUNT = 150;
+        const BUTTERFLY_COUNT = 15; // 保持总数不变
+        
+        let currentAngle = 0;
+        let time = 0;
+        let wind = 0;
+        let windTarget = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function getFrozenColor() {
+            const rand = Math.random();
+            if (rand > 0.8) return `rgba(255, 255, 255, 0.8)`;
+            if (rand > 0.5) return `rgba(180, 240, 255, 0.6)`;
+            return `rgba(100, 180, 255, 0.4)`;
+        }
+
+        class TreeParticle {
+            constructor() { this.reset(); this.y = Math.random() * 600 - 300; }
+            reset() {
+                const layers = 12;
+                const layerIndex = Math.floor(Math.random() * layers); 
+                const layerHeight = 600 / layers;
+                const layerProgress = Math.random();
+                this.y = -300 + (layerIndex * layerHeight) + (layerProgress * layerHeight);
+                const baseRadius = (this.y + 300) * 0.35;
+                const layerFlair = layerProgress * 15; 
+                const randomFluff = Math.random() * 10; 
+                this.targetRadius = baseRadius + layerFlair + randomFluff;
+                this.angle = Math.random() * Math.PI * 2;
+                this.velocity = Math.random() * 0.2 + 0.05; 
+                this.color = getFrozenColor();
+                this.needleLength = Math.random() * 10 + 6; 
+                this.thickness = Math.random() * 2 + 2;     
+            }
+            update() {
+                this.y += this.velocity;
+                const relativeY = this.y + 300;
+                let r = relativeY * 0.35;
+                r += Math.abs(Math.sin(relativeY * 0.12)) * 15; 
+                this.angle += 0.0025; 
+                this.x = Math.cos(this.angle) * r;
+                this.z = Math.sin(this.angle) * r;
+                if (this.y > 300) this.y = -300;
+            }
+            draw(scale, x2d, y2d) {
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = this.thickness * scale;
+                const centerX = width / 2;
+                const dx = x2d - centerX;
+                const dy = 20 * scale; 
+                const len = Math.sqrt(dx*dx + dy*dy);
+                if (len > 0) {
+                    const nx = dx / len;
+                    const ny = dy / len;
+                    ctx.beginPath();
+                    ctx.moveTo(x2d, y2d);
+                    ctx.lineTo(x2d + nx * this.needleLength * scale, y2d + ny * this.needleLength * scale);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // --- 核心修改：双色柔光蝴蝶 ---
+        class Butterfly {
+            constructor() {
+                this.reset();
+                this.y = Math.random() * 500 - 250; 
+            }
+            reset() {
+                this.y = Math.random() * 500 - 250;
+                this.angle = Math.random() * Math.PI * 2;
+                
+                // --- 颜色逻辑 ---
+                const rand = Math.random();
+                if (rand > 0.4) {
+                    // 金色 (60%概率) - 降低透明度到 0.6
+                    this.color = "rgba(255, 229, 124, 0.6)"; 
+                } else {
+                    // 青蓝色 (40%概率) - 冰青色，低透明度
+                    this.color = "rgba(100, 220, 255, 0.6)"; 
+                }
+
+                this.size = Math.random() * 8 + 5; 
+                this.flapSpeed = 0.1 + Math.random() * 0.1;
+                this.flapOffset = Math.random() * 100;
+            }
+            update() {
+                this.y += 0.1;
+                const relativeY = this.y + 300;
+                let r = relativeY * 0.35 + 20; 
+                this.angle += 0.0025; 
+                this.x = Math.cos(this.angle) * r;
+                this.z = Math.sin(this.angle) * r;
+                if (this.y > 300) this.reset();
+            }
+            draw(scale, x2d, y2d) {
+                const flap = Math.abs(Math.sin(time * this.flapSpeed + this.flapOffset));
+                const wingWidth = this.size * scale * flap; 
+                const wingHeight = this.size * scale;
+                ctx.save();
+                ctx.translate(x2d, y2d);
+                
+                // --- 柔光处理 ---
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 5; // 从 10 降到 5，减弱光晕
+                ctx.fillStyle = this.color;
+                
+                ctx.beginPath();
+                ctx.ellipse(-wingWidth/2, 0, wingWidth, wingHeight/1.5, Math.PI/4, 0, Math.PI*2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(wingWidth/2, 0, wingWidth, wingHeight/1.5, -Math.PI/4, 0, Math.PI*2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class SpiralParticle {
+            constructor() {
+                this.reset();
+                this.y = Math.random() * 600 - 300;
+            }
+            reset() {
+                this.y = -300;
+                this.angle = Math.random() * Math.PI * 2;
+                this.velocity = Math.random() * 0.4 + 0.1; 
+                this.size = Math.random() * 3 + 2; 
+                this.x = 0; this.z = 0;
+                this.alpha = Math.random();
+                this.blinkSpeed = 0.015; 
+            }
+            update() {
+                this.y += this.velocity;
+                const r = (this.y + 300) * 0.5 + 20; 
+                this.angle = (this.y * 0.02) + currentAngle * 2; 
+                this.x = Math.cos(this.angle) * r;
+                this.z = Math.sin(this.angle) * r;
+                if (this.y > 300) this.y = -300;
+                this.alpha += this.blinkSpeed;
+                if (this.alpha > 1 || this.alpha < 0.3) this.blinkSpeed *= -1;
+            }
+            draw(scale, x2d, y2d) {
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(255, 229, 124, ${this.alpha})`; 
+                ctx.arc(x2d, y2d, this.size * scale, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class SnowParticle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.z = Math.random() * 2 + 0.5; 
+                this.baseSize = Math.random() * 2 + 1; 
+                this.opacity = Math.random() * 0.5 + 0.3;
+                this.speed = (Math.random() * 0.5 + 0.2) * this.z * 0.5; 
+            }
+            update() {
+                this.y += this.speed;
+                this.x += wind * this.z * 0.5;
+                this.x += Math.sin(this.y * 0.01 + time * 0.01) * 0.2;
+                if (this.y > height) {
+                    this.y = -10;
+                    this.x = Math.random() * width;
+                }
+                if (this.x > width) this.x = 0;
+                if (this.x < 0) this.x = width;
+            }
+            draw() {
+                const drawSize = this.baseSize * this.z;
+                if (drawSize < 2) {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.8})`;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, drawSize, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    const gradient = ctx.createRadialGradient(
+                        this.x, this.y, 0,
+                        this.x, this.y, drawSize * 2 
+                    );
+                    gradient.addColorStop(0, `rgba(255, 255, 255, ${this.opacity})`);
+                    gradient.addColorStop(0.5, `rgba(255, 255, 255, ${this.opacity * 0.3})`);
+                    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, drawSize * 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function drawGlowingStar(cx, cy, scale) {
+            const spikes = 5;
+            const outerRadius = 40 * scale; 
+            const innerRadius = 20 * scale; 
+            const pulse = 1 + Math.sin(Date.now() * 0.0015) * 0.1;
+            const rOuter = outerRadius * pulse;
+            const rInner = innerRadius * pulse;
+            
+            function createPath() {
+                let rot = Math.PI / 2 * 3;
+                let x = cx; let y = cy;
+                let step = Math.PI / spikes;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - rOuter);
+                for (let i = 0; i < spikes; i++) {
+                    x = cx + Math.cos(rot) * rOuter;
+                    y = cy + Math.sin(rot) * rOuter;
+                    ctx.lineTo(x, y); rot += step;
+                    x = cx + Math.cos(rot) * rInner;
+                    y = cy + Math.sin(rot) * rInner;
+                    ctx.lineTo(x, y); rot += step;
+                }
+                ctx.lineTo(cx, cy - rOuter);
+                ctx.closePath();
+            }
+            createPath();
+            ctx.shadowColor = "#ffaa00"; ctx.shadowBlur = 60; 
+            ctx.fillStyle = "#ffe57c"; ctx.fill();
+            ctx.shadowBlur = 20; ctx.shadowColor = "#ffffcc";
+            ctx.fillStyle = "#ffffff"; ctx.globalAlpha = 0.8;       
+            ctx.fill();
+            ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+        }
+
+        function init() {
+            particles = []; snowParticles = []; spiralParticles = []; butterflies = [];
+            for (let i = 0; i < TREE_PARTICLE_COUNT; i++) particles.push(new TreeParticle());
+            for (let i = 0; i < SNOW_COUNT; i++) snowParticles.push(new SnowParticle());
+            for (let i = 0; i < SPIRAL_COUNT; i++) spiralParticles.push(new SpiralParticle());
+            for (let i = 0; i < BUTTERFLY_COUNT; i++) butterflies.push(new Butterfly());
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            currentAngle += 0.001; 
+            time += 1; 
+
+            windTarget = Math.sin(time * 0.005) * 0.5;
+            wind += (windTarget - wind) * 0.01;
+
+            ctx.globalCompositeOperation = 'source-over';
+            snowParticles.forEach(p => { p.update(); p.draw(); });
+
+            ctx.globalCompositeOperation = 'lighter';
+            
+            const cos = Math.cos(currentAngle);
+            const sin = Math.sin(currentAngle);
+            const focalLength = 800;
+            const all3DObjects = [...particles, ...spiralParticles, ...butterflies];
+            
+            all3DObjects.forEach(p => {
+                p.update();
+                const rx = p.x * cos - p.z * sin;
+                const rz = p.x * sin + p.z * cos;
+                const scale = focalLength / (focalLength + rz + 400);
+                if (scale > 0) {
+                     const x2d = rx * scale + width / 2;
+                     const y2d = p.y * scale + height / 2;
+                     if (x2d > 0 && x2d < width && y2d > 0 && y2d < height) {
+                         p.draw(scale, x2d, y2d);
+                     }
+                }
+            });
+
+            ctx.globalCompositeOperation = 'source-over';
+            const starScale = focalLength / (focalLength + 0 + 400);
+            drawGlowingStar(width / 2, (-310 * starScale) + height / 2, starScale);
+
+            requestAnimationFrame(animate);
+        }
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
